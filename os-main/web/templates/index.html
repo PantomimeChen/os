@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>OS Showcase Web</title>
+  <style>
+    :root { --bg:#0b0f16; --panel:#111827; --border:#243244; --text:#e5e7eb; --muted:#9fb3c8; --primary:#3b82f6; --accent:#22d3ee; }
+    body { font-family: Segoe UI, Arial, sans-serif; background:linear-gradient(120deg,#0b0f16,#0e1420); color:var(--text); margin:0; }
+    header { background:#0f172a; padding:14px 22px; border-bottom:1px solid var(--border); position:sticky; top:0; z-index:10; }
+    .brand { display:flex; align-items:center; gap:10px; }
+    .dot { width:10px; height:10px; border-radius:50%; background:var(--accent); box-shadow:0 0 12px var(--accent); }
+    .container { padding:18px 22px; }
+    .tabs { display:flex; gap:10px; margin-bottom:12px; }
+    .tab { background:#0b1220; border:1px solid var(--border); color:var(--muted); padding:8px 12px; border-radius:8px; cursor:pointer; }
+    .tab.active { color:white; background:linear-gradient(90deg,#1f2937,#0f172a); border-color:#334155; }
+    .panel { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:14px; margin-bottom:14px; box-shadow:0 6px 16px rgba(0,0,0,0.25); }
+    input, select { background:#0b1220; color:var(--text); border:1px solid #2a3242; border-radius:8px; padding:8px 10px; margin-right:8px; }
+    button { background:var(--primary); color:white; border:none; border-radius:8px; padding:8px 12px; cursor:pointer; }
+    button.secondary { background:#1f2937; color:#cbd5e1; }
+    button:disabled { background:#3a4a6b; cursor:not-allowed; }
+    .section { display:none; }
+    .section.active { display:block; }
+    #gantt { padding:8px; }
+    .lane { margin:6px 0; }
+    .slice { display:inline-block; height:28px; margin:0 2px; border-radius:6px; color:#000; font-weight:bold; text-align:center; line-height:28px; transition: transform .2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow .2s cubic-bezier(0.22, 1, 0.36, 1); }
+    .slice.active { box-shadow: 0 0 10px rgba(34,211,238,0.8); transform: translateY(-2px); }
+    .legend { margin-top:8px; font-size:12px; color:#bfbfbf; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+    .table { width:100%; border-collapse:collapse; }
+    .table th, .table td { border-bottom:1px solid var(--border); padding:8px; text-align:left; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; }
+    .badge.ready { background:#22d3ee; color:#0b0f16; }
+    .badge.run { background:#10b981; color:#0b0f16; }
+    .badge.block { background:#f59e0b; color:#0b0f16; }
+    .badge.done { background:#ef4444; color:#fff; }
+    .progress { width:100%; height:16px; background:#0b1220; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+    .progress .bar { height:100%; background:linear-gradient(90deg,#22d3ee,#3b82f6); width:0%; transition:width .2s ease; }
+    .flow { font-family: Consolas, monospace; color:#cbd5e1; }
+    .cursor { position: relative; height: 0; }
+    .cursor .line { position:absolute; top:-6px; width:2px; height:40px; background:#22d3ee; box-shadow:0 0 12px #22d3ee; }
+    
+    .lanes { display:grid; grid-template-columns: repeat(5, 1fr); gap:12px; }
+    .lane-col { border:1px dashed var(--border); border-radius:10px; min-height:140px; padding:10px; }
+    .lane-col .title { color:var(--muted); margin-bottom:8px; }
+    .chip { display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:999px; margin:4px; color:#0b0f16; font-weight:bold; box-shadow:0 4px 10px rgba(0,0,0,0.35); opacity:0; transform: scale(.9); animation: fadeIn .25s forwards; }
+    .chip.created { background:#64748b; }
+    .chip.ready { background:#22d3ee; }
+    .chip.run { background:#10b981; }
+    .chip.block { background:#f59e0b; }
+    .chip.done { background:#ef4444; color:#fff; }
+    @keyframes fadeIn { to { opacity:1; transform: scale(1); } }
+    @keyframes pulse { 0% { box-shadow:0 0 0 rgba(34,211,238,0.0);} 50% { box-shadow:0 0 18px rgba(34,211,238,0.9);} 100% { box-shadow:0 0 0 rgba(34,211,238,0.0);} }
+    .pulse { animation: pulse .6s ease; }
+    
+    .track { position:relative; height:24px; background:#0b1220; border:1px solid var(--border); border-radius:999px; overflow:hidden; }
+    .dot { position:absolute; left:0; top:2px; width:20px; height:20px; border-radius:999px; box-shadow:0 0 10px rgba(0,0,0,0.5); }
+    .dot.prod { background:#22d3ee; }
+    .dot.cons { background:#3b82f6; }
+    .move { transition: transform .6s cubic-bezier(0.22, 1, 0.36, 1); }
+    .toolbar { display:flex; align-items:center; gap:10px; margin:10px 0; }
+    .icon { width:18px; height:18px; vertical-align:middle; }
+    .range { width:180px; }
+  </style>
+  <script>
+    const colors = ["#00ffff","#ff00ff","#00ff7f","#1e90ff","#ffd700","#ff4d4f"];
+    async function runSchedule() {
+      const algo = document.getElementById('algo').value;
+      const cores = parseInt(document.getElementById('cores').value || '1');
+      const quantum = parseInt(document.getElementById('quantum').value || '1');
+      const arrivals = (document.getElementById('arrivals').value||'').split(',').filter(x=>x.trim().length).map(x=>parseInt(x.trim()));
+      const bursts = (document.getElementById('bursts').value||'').split(',').filter(x=>x.trim().length).map(x=>parseInt(x.trim()));
+      const priorities = (document.getElementById('priorities').value||'').split(',').filter(x=>x.trim().length).map(x=>parseInt(x.trim()));
+      const btn = document.getElementById('run'); btn.disabled = true;
+      try {
+        const res = await fetch('/api/schedule', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ algo, cores, quantum, arrivals, bursts, priorities })
+        });
+        const data = await res.json();
+        renderGantt(data.slices, cores);
+        document.getElementById('metrics').innerText = `平均等待 ${data.metrics.wait.toFixed(2)} | 周转 ${data.metrics.turn.toFixed(2)}`;
+      } catch (e) {
+        alert('运行失败: ' + e);
+      } finally { btn.disabled = false; }
+    }
+    let ganttTimer = null; let rafId = null; let paused = false; let playSpeed = 1.0;
+    async function togglePlay() { paused = !paused; const ico = document.getElementById('ico-playpause'); if (ico) ico.setAttribute('href', paused ? '#ico-play' : '#ico-pause'); await applyGlobalPauseResume(); }
+    async function setPlaySpeed(v) { playSpeed = parseFloat(v || '1'); const lab = document.getElementById('speed-label'); if (lab) lab.innerText = '×' + playSpeed.toFixed(1); await applyGlobalSpeed(); }
+    function renderGantt(slices, cores) {
+      const lanes = {};
+      for (const s of slices) { (lanes[s.core] ||= []).push(s); }
+      const gantt = document.getElementById('gantt');
+      gantt.innerHTML = '';
+      const scale = 12;
+      const total = slices.length ? Math.max(...slices.map(s=>s.end)) : 0;
+      const cursorWrap = document.createElement('div'); cursorWrap.className='cursor'; const cursor = document.createElement('div'); cursor.className='line'; cursorWrap.appendChild(cursor); gantt.appendChild(cursorWrap);
+      for (const core of Object.keys(lanes).sort((a,b)=>parseInt(a)-parseInt(b))) {
+        const laneDiv = document.createElement('div'); laneDiv.className = 'lane';
+        const label = document.createElement('div'); label.style.color = '#9fb3c8'; label.innerText = `Core ${core}`; laneDiv.appendChild(label);
+        const row = document.createElement('div');
+        for (const s of lanes[core]) {
+          const width = Math.max(12, (s.end - s.start) * scale);
+          const slice = document.createElement('div'); slice.className = 'slice';
+          slice.style.width = width + 'px'; slice.style.background = colors[s.pid % colors.length]; slice.innerText = 'P' + s.pid;
+          slice.dataset.start = s.start; slice.dataset.end = s.end;
+          row.appendChild(slice);
+        }
+        laneDiv.appendChild(row);
+        gantt.appendChild(laneDiv);
+      }
+      const legend = document.createElement('div'); legend.className = 'legend'; legend.innerText = '提示: 修改 CSV 与参数后点击运行';
+      gantt.appendChild(legend);
+      if (ganttTimer) { clearInterval(ganttTimer); ganttTimer = null; }
+      if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      let t = 0; let lastTs = null; paused = false; const ico = document.getElementById('ico-playpause'); if (ico) ico.setAttribute('href', '#ico-pause');
+      function step(ts) {
+        if (!lastTs) lastTs = ts;
+        const dt = (ts - lastTs) / 1000;
+        lastTs = ts;
+        if (!paused) t += dt * playSpeed;
+        const x = t * scale; cursor.style.transform = `translateX(${x}px)`;
+        document.querySelectorAll('#gantt .slice').forEach(el=>{
+          const s = parseFloat(el.dataset.start), e = parseFloat(el.dataset.end);
+          if (t>=s && t<e) el.classList.add('active'); else el.classList.remove('active');
+        });
+        if (t<total) { rafId = requestAnimationFrame(step); }
+      }
+      rafId = requestAnimationFrame(step);
+    }
+    async function api(path, method='GET', body=null) {
+      const opt = { method, headers: { 'Content-Type':'application/json' } };
+      if (body) opt.body = JSON.stringify(body);
+      const res = await fetch(path, opt); return res.json();
+    }
+    let procActive = false, ipcActive = false, semActive = false;
+    function scheduleProc() { if (procActive) return; procActive = true; const tick = async()=>{ if (!procActive) return; if (!paused) await procPoll(); setTimeout(tick, Math.max(80, 200/Math.max(0.1, playSpeed))); }; tick(); }
+    function scheduleIpc() { if (ipcActive) return; ipcActive = true; const tick = async()=>{ if (!ipcActive) return; if (!paused) await ipcPoll(); setTimeout(tick, Math.max(80, 200/Math.max(0.1, playSpeed))); }; tick(); }
+    function scheduleSem() { if (semActive) return; semActive = true; const tick = async()=>{ if (!semActive) return; if (!paused) await semPoll(); setTimeout(tick, Math.max(80, 200/Math.max(0.1, playSpeed))); }; tick(); }
+    async function procStart() { await api('/api/proc/start','POST'); scheduleProc(); }
+    async function procPause() { await api('/api/proc/pause','POST'); procActive = false; }
+    async function procReset() { await api('/api/proc/reset','POST'); document.querySelector('#proc-body').innerHTML=''; document.querySelector('#proc-log').innerHTML='';
+      for (const st of ['created','ready','run','block','done']) document.getElementById(`proc-${st}`).querySelector('.items').innerHTML='';
+    }
+    async function procPoll() {
+      const data = await api('/api/proc/events');
+      const log = document.querySelector('#proc-log');
+      for (const ev of data.events) {
+        const pid = ev.pid, st = ev.state;
+        const map = { 'CREATED':'created', 'READY':'ready', 'RUNNING':'run', 'BLOCKED':'block', 'TERMINATED':'done' };
+        const target = document.getElementById(`proc-${map[st]}`).querySelector('.items');
+        let chip = document.querySelector(`.chip[data-pid="${pid}"]`);
+        if (!chip) { chip = document.createElement('div'); chip.className='chip created'; chip.dataset.pid = pid; chip.innerText = 'P'+pid; document.getElementById('proc-created').querySelector('.items').appendChild(chip); }
+        chip.className = 'chip ' + map[st];
+        target.appendChild(chip);
+        const item = document.createElement('div'); item.className='flow'; item.innerText = `PID ${pid} -> ${st}`; log.appendChild(item);
+        if (log.children.length>50) log.removeChild(log.firstChild);
+      }
+    }
+    async function ipcStart() { await api('/api/ipc/start','POST'); scheduleIpc(); }
+    async function ipcPause() { await api('/api/ipc/pause','POST'); ipcActive = false; }
+    async function ipcReset() { await api('/api/ipc/reset','POST'); document.querySelector('#ipc-log').innerHTML=''; document.querySelector('#ipc-list').innerHTML=''; setProgress(0,1); }
+    function setProgress(size, cap) { const pct = Math.floor(100*size/Math.max(1,cap)); document.querySelector('#ipc-bar').style.width = pct + '%'; document.querySelector('#ipc-pct').innerText = pct + '%'; }
+    async function ipcPoll() {
+      const st = await api('/api/ipc/state'); setProgress(st.size, st.cap);
+      const data = await api('/api/ipc/events');
+      const log = document.querySelector('#ipc-log');
+      const list = document.querySelector('#ipc-list');
+      for (const ev of data.events) {
+        const d = ev.data; const dir = ev.type==='produce'?'→':'←';
+        const item = document.createElement('div'); item.className='flow'; item.style.color = ev.type==='produce'? '#22d3ee':'#3b82f6'; item.innerText = `${dir} ${JSON.stringify(d)}`; log.appendChild(item);
+        if (log.children.length>50) log.removeChild(log.firstChild);
+        if (ev.type==='produce') {
+          const li = document.createElement('div'); li.innerText = `#${d.seq}: ${d.value}`; list.appendChild(li);
+          if (list.children.length>st.cap) list.removeChild(list.firstChild);
+          animateDot('prod');
+        } else {
+          if (list.children.length) list.removeChild(list.firstChild);
+          animateDot('cons');
+        }
+      }
+    }
+    function animateDot(kind) { const track = document.getElementById(kind==='prod'?'ipc-track-produce':'ipc-track-consume'); const dot = document.createElement('div'); dot.className='dot move ' + (kind==='prod'?'prod':'cons'); dot.style.transitionDuration = (0.6 / playSpeed) + 's'; track.appendChild(dot); requestAnimationFrame(()=>{ dot.style.transform='translateX(95%)'; }); setTimeout(()=>{ if (dot.parentNode) track.removeChild(dot); }, (650 / playSpeed)); }
+    async function semStart() { await api('/api/sem/start','POST'); scheduleSem(); }
+    async function semPause() { await api('/api/sem/pause','POST'); semActive = false; }
+    async function semReset() { await api('/api/sem/reset','POST'); document.querySelector('#sem-log').innerHTML=''; document.querySelector('#sem-block').innerHTML=''; document.querySelector('#sem-val').innerText='0'; }
+    async function semPoll() {
+      const st = await api('/api/sem/state'); document.querySelector('#sem-val').innerText = st.value;
+      document.querySelector('#sem-val').classList.add('pulse'); setTimeout(()=>document.querySelector('#sem-val').classList.remove('pulse'), 400);
+      const blk = document.querySelector('#sem-block'); blk.innerHTML='';
+      for (const b of st.blocked) { const row = document.createElement('div'); row.innerText = `${b[0]}${b[1]}`; blk.appendChild(row); }
+      const data = await api('/api/sem/events');
+      const log = document.querySelector('#sem-log');
+      for (const ev of data.events) {
+        const item = document.createElement('div'); item.className='flow';
+        const t = ev.type==='try'? '尝试': ev.type==='acquire'? '获取': '释放';
+        item.innerText = `${t} ${ev.role}${ev.id}`; log.appendChild(item);
+        if (log.children.length>50) log.removeChild(log.firstChild);
+      }
+    }
+    function switchTab(id) {
+      for (const el of document.querySelectorAll('.section')) el.classList.remove('active');
+      for (const el of document.querySelectorAll('.tab')) el.classList.remove('active');
+      document.getElementById(id).classList.add('active');
+      document.querySelector(`[data-tab="${id}"]`).classList.add('active');
+    }
+    window.addEventListener('DOMContentLoaded', ()=>{
+      renderGantt([], 1);
+      switchTab('schedule');
+    });
+    async function applyGlobalPauseResume() {
+      if (paused) {
+        await api('/api/proc/pause','POST'); await api('/api/ipc/pause','POST'); await api('/api/sem/pause','POST');
+      } else {
+        await api('/api/proc/resume','POST'); await api('/api/ipc/resume','POST'); await api('/api/sem/resume','POST');
+        scheduleProc(); scheduleIpc(); scheduleSem();
+      }
+    }
+    async function applyGlobalSpeed() {
+      await api('/api/proc/speed','POST', { factor: playSpeed });
+      await api('/api/ipc/speed','POST', { factor: playSpeed });
+      await api('/api/sem/speed','POST', { factor: playSpeed });
+    }
+  </script>
+</head>
+<body>
+  <header>
+    <div class="brand"><div class="dot"></div><h2>操作系统实验展示（Web）</h2></div>
+  </header>
+  <div class="container">
+    <div class="tabs">
+      <div class="tab active" data-tab="schedule" onclick="switchTab('schedule')">CPU 调度</div>
+      <div class="tab" data-tab="process" onclick="switchTab('process')">进程线程</div>
+      <div class="tab" data-tab="ipc" onclick="switchTab('ipc')">进程间通信</div>
+      <div class="tab" data-tab="semaphore" onclick="switchTab('semaphore')">信号量同步</div>
+    </div>
+    <div id="schedule" class="section active panel">
+      <select id="algo">
+        <option value="fcfs">FCFS</option>
+        <option value="rr">RR</option>
+        <option value="sjf">SJF</option>
+        <option value="priority">优先级</option>
+      </select>
+      <input id="cores" placeholder="核数" value="1" />
+      <input id="quantum" placeholder="时间片(RR)" value="2" />
+      <input id="arrivals" placeholder="到达CSV" value="0,2,4" />
+      <input id="bursts" placeholder="执行CSV" value="5,3,2" />
+      <input id="priorities" placeholder="优先CSV" value="2,1,3" />
+      <button id="run" onclick="runSchedule()">运行</button>
+      <div class="toolbar">
+        <button onclick="togglePlay()" title="播放/暂停"><svg class="icon"><use id="ico-playpause" href="#ico-pause"/></svg></button>
+        <input class="range" type="range" min="0.5" max="3" step="0.1" value="1" oninput="setPlaySpeed(this.value)" />
+        <span id="speed-label">×1.0</span>
+      </div>
+    </div>
+    <div class="panel">
+      <div id="metrics">平均等待 - | 周转 -</div>
+    </div>
+    <div class="panel">
+      <div id="gantt"></div>
+    </div>
+    <div id="process" class="section panel">
+      <div style="margin-bottom:8px;">
+        <button onclick="procStart()">开始</button>
+        <button class="secondary" onclick="procPause()">暂停</button>
+        <button class="secondary" onclick="procReset()">重置</button>
+      </div>
+      <div class="lanes">
+        <div class="lane-col" id="proc-created"><div class="title">创建</div><div class="items"></div></div>
+        <div class="lane-col" id="proc-ready"><div class="title">就绪</div><div class="items"></div></div>
+        <div class="lane-col" id="proc-run"><div class="title">运行</div><div class="items"></div></div>
+        <div class="lane-col" id="proc-block"><div class="title">阻塞</div><div class="items"></div></div>
+        <div class="lane-col" id="proc-done"><div class="title">终止</div><div class="items"></div></div>
+      </div>
+      <div style="margin-top:12px;" id="proc-log"></div>
+    </div>
+    <div id="ipc" class="section panel">
+      <div class="grid">
+        <div>
+          <div class="progress"><div class="bar" id="ipc-bar"></div></div>
+          <div id="ipc-pct" style="margin-top:6px; color:var(--muted);">0%</div>
+          <div style="margin-top:10px;" id="ipc-list"></div>
+        </div>
+        <div>
+          <div style="margin-bottom:8px;">
+            <button onclick="ipcStart()">开始</button>
+            <button class="secondary" onclick="ipcPause()">暂停</button>
+            <button class="secondary" onclick="ipcReset()">重置</button>
+          </div>
+          <div id="ipc-log"></div>
+          <div style="margin-top:10px; color:var(--muted);">数据流动画</div>
+          <div class="track" id="ipc-track-produce"></div>
+          <div style="height:6px"></div>
+          <div class="track" id="ipc-track-consume"></div>
+          <div style="margin-top:12px; color:var(--muted);">路径动画</div>
+          <svg id="ipc-svg-produce" width="100%" height="60"><path d="M10,40 C 180,10 260,10 480,40" stroke="#334155" fill="none" stroke-width="2"/></svg>
+          <svg id="ipc-svg-consume" width="100%" height="60"><path d="M10,20 C 180,50 260,50 480,20" stroke="#334155" fill="none" stroke-width="2"/></svg>
+        </div>
+      </div>
+    </div>
+    <div id="semaphore" class="section panel">
+      <div class="grid">
+        <div>
+          <div>信号量值 <span id="sem-val">0</span></div>
+          <div style="margin-top:10px;">阻塞队列</div>
+          <div id="sem-block"></div>
+        </div>
+        <div>
+          <div style="margin-bottom:8px;">
+            <button onclick="semStart()">开始</button>
+            <button class="secondary" onclick="semPause()">暂停</button>
+            <button class="secondary" onclick="semReset()">重置</button>
+          </div>
+          <div id="sem-log"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+<svg style="position:absolute; width:0; height:0; overflow:hidden;">
+  <symbol id="ico-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></symbol>
+  <symbol id="ico-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></symbol>
+  </svg>
+</html>

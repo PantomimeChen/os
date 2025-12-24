@@ -1,0 +1,6 @@
+textual
+rich
+fastapi
+uvicorn
+jinja2
+pyinstaller
